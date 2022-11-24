@@ -14,10 +14,10 @@ protocol AVMixerDelegate: AnyObject {
 /// An object that mixies audio and video for streaming.
 public class AVMixer {
     /// The default fps for an AVMixer, value is 30.
-    public static let defaultFPS: Float64 = 30
+    public static let defaultFPS: Float64 = 60
     /// The default videoSettings for an AVMixer.
     public static let defaultVideoSettings: [NSString: AnyObject] = [
-        kCVPixelBufferPixelFormatTypeKey: NSNumber(value: kCVPixelFormatType_32BGRA)
+        kCVPixelBufferPixelFormatTypeKey: NSNumber(value: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange)
     ]
 
     #if os(iOS) || os(macOS)

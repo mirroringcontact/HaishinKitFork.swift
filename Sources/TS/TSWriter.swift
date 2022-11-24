@@ -27,6 +27,7 @@ public class TSWriter: Running {
     /// The exptected medias = [.video, .audio].
     public var expectedMedias: Set<AVMediaType> = []
 
+    var appGroupsId: String = ""
     var audioContinuityCounter: UInt8 = 0
     var videoContinuityCounter: UInt8 = 0
     var PCRPID: UInt16 = TSWriter.defaultVideoPID
@@ -284,7 +285,7 @@ extension TSWriter: VideoCodecDelegate {
 class TSFileWriter: TSWriter {
     static let defaultSegmentCount: Int = 3
     static let defaultSegmentMaxCount: Int = 12
-
+    
     var segmentMaxCount: Int = TSFileWriter.defaultSegmentMaxCount
     private(set) var files: [M3UMediaInfo] = []
     private var currentFileHandle: FileHandle?
@@ -315,16 +316,16 @@ class TSFileWriter: TSWriter {
         let duration: Double = timestamp.seconds - rotatedTimestamp.seconds
         if duration <= segmentDuration {
             return
-        }
+        } 
         let fileManager = FileManager.default
-
+        let containerURL = fileManager.containerURL(forSecurityApplicationGroupIdentifier: appGroupsId)!
         #if os(OSX)
         let bundleIdentifier: String? = Bundle.main.bundleIdentifier
         let temp: String = bundleIdentifier == nil ? NSTemporaryDirectory() : NSTemporaryDirectory() + bundleIdentifier! + "/"
         #else
-        let temp: String = NSTemporaryDirectory()
+        let temp: String = containerURL.appendingPathComponent("temp").path + "/"//NSTemporaryDirectory()
         #endif
-
+        
         if !fileManager.fileExists(atPath: temp) {
             do {
                 try fileManager.createDirectory(atPath: temp, withIntermediateDirectories: false, attributes: nil)
@@ -335,9 +336,17 @@ class TSFileWriter: TSWriter {
 
         let filename: String = Int(timestamp.seconds).description + ".ts"
         let url = URL(fileURLWithPath: temp + filename)
-
-        if let currentFileURL: URL = currentFileURL {
+ 
+        
+        for mediainfo in files {
+            if mediainfo.url.lastPathComponent == currentFileURL?.lastPathComponent {
+                print(">>>: fuck!!! \(mediainfo.url.lastPathComponent)")
+            }
+        }
+        
+        if let currentFileURL: URL = currentFileURL, files.contains(where: { $0.url.lastPathComponent == currentFileURL.lastPathComponent }) == false {
             files.append(M3UMediaInfo(url: currentFileURL, duration: duration))
+            print(">>>: append file: \(currentFileURL.path) ")
             sequence += 1
         }
 
@@ -345,9 +354,13 @@ class TSFileWriter: TSWriter {
         if TSFileWriter.defaultSegmentMaxCount <= files.count {
             let info: M3UMediaInfo = files.removeFirst()
             do {
+                print(">>>: remove: \(info.url.path)")
                 try fileManager.removeItem(at: info.url as URL)
             } catch let e as NSError {
+                print(">>>: remove error: \(info.url.path)")
                 logger.warn("\(e)")
+//                let fileURLs = try? fileManager.contentsOfDirectory(at: URL(fileURLWithPath: temp), includingPropertiesForKeys: nil, options:  [] )
+//                print(">>>: remove files now: \(fileURLs?.map({ $0.path }))")
             }
         }
         currentFileURL = url

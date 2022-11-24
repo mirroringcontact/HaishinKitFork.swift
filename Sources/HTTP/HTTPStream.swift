@@ -11,7 +11,8 @@ open class HTTPStream: NetStream {
             tsWriter.expectedMedias = newValue
         }
     }
-
+    public var appGroupsId: String = ""
+    
     /// The name of stream.
     private(set) var name: String?
     private lazy var tsWriter = TSFileWriter()
@@ -28,6 +29,7 @@ open class HTTPStream: NetStream {
             self.mixer.startEncoding(self.tsWriter)
             self.mixer.startRunning()
             self.tsWriter.startRunning()
+            self.tsWriter.appGroupsId = self.appGroupsId
         }
     }
 
