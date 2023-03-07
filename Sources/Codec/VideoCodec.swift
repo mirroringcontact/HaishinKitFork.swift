@@ -33,6 +33,27 @@ public class VideoCodec {
     #endif
     #endif
 
+    /// A bitRate mode that affectes how to encode the video source.
+    public enum BitRateMode: String, Codable {
+        /// The average bit rate.
+        case average
+        /// The constant bit rate.
+        @available(iOS 16.0, tvOS 16.0, macOS 13.0, *)
+        case constant
+
+        var key: VTSessionOptionKey {
+            if #available(iOS 16.0, tvOS 16.0, macOS 13.0, *) {
+                switch self {
+                case .average:
+                    return .averageBitRate
+                case .constant:
+                    return .constantBitRate
+                }
+            }
+            return .averageBitRate
+        }
+    }
+
     /**
      * The VideoCodec error domain codes.
      */
@@ -47,60 +68,6 @@ public class VideoCodec {
         case failedToSetOption(status: OSStatus, option: VTSessionOption)
     }
 
-    /**
-     * The video encoding or decoding options.
-     */
-    public enum Option: String, KeyPathRepresentable, CaseIterable {
-        /// Specifies the width of video.
-        case width
-        /// Specifies the height of video.
-        case height
-        /// Specifies the bitrate.
-        case bitrate
-        /// Specifies the H264 profile level.
-        case profileLevel
-        #if os(macOS)
-        /// Specifies  the HardwareEncoder is enabled(TRUE), or not(FALSE).
-        case enabledHardwareEncoder
-        #endif
-        /// Specifies the keyframeInterval.
-        case maxKeyFrameIntervalDuration
-        /// Specifies the scalingMode.
-        case scalingMode
-        case allowFrameReordering
-
-        public var keyPath: AnyKeyPath {
-            switch self {
-            case .width:
-                return \VideoCodec.width
-            case .height:
-                return \VideoCodec.height
-            case .bitrate:
-                return \VideoCodec.bitrate
-            #if os(macOS)
-            case .enabledHardwareEncoder:
-                return \VideoCodec.enabledHardwareEncoder
-            #endif
-            case .maxKeyFrameIntervalDuration:
-                return \VideoCodec.maxKeyFrameIntervalDuration
-            case .scalingMode:
-                return \VideoCodec.scalingMode
-            case .profileLevel:
-                return \VideoCodec.profileLevel
-            case .allowFrameReordering:
-                return \VideoCodec.allowFrameReordering
-            }
-        }
-    }
-
-    /// The videoCodec's width value. The default value is 480.
-    public static let defaultWidth: Int32 = 480
-    /// The videoCodec's height value. The default value is 272.
-    public static let defaultHeight: Int32 = 272
-    /// The videoCodec's bitrate value. The default value is 160,000.
-    public static let defaultBitrate: UInt32 = 160 * 1000
-    /// The videoCodec's scalingMode value. The default value is trim.
-    public static let defaultScalingMode: ScalingMode = .trim
     /// The videoCodec's attributes value.
     public static var defaultAttributes: [NSString: AnyObject]? = [
         kCVPixelBufferIOSurfacePropertiesKey: [:] as AnyObject,
@@ -108,98 +75,22 @@ public class VideoCodec {
     ]
 
     /// Specifies the settings for a VideoCodec.
-    public var settings: Setting<VideoCodec, Option> = [:] {
+    public var settings: VideoCodecSettings = .default {
         didSet {
-            settings.observer = self
+            let invalidateSession = settings.invalidateSession(oldValue)
+            if invalidateSession {
+                self.invalidateSession = invalidateSession
+            } else {
+                settings.apply(self, rhs: oldValue)
+            }
         }
     }
+
     /// The running value indicating whether the VideoCodec is running.
     public private(set) var isRunning: Atomic<Bool> = .init(false)
 
-    var scalingMode = VideoCodec.defaultScalingMode {
-        didSet {
-            guard scalingMode != oldValue else {
-                return
-            }
-            invalidateSession = true
-        }
-    }
-
-    var width = VideoCodec.defaultWidth {
-        didSet {
-            guard width != oldValue else {
-                return
-            }
-            invalidateSession = true
-        }
-    }
-    var height = VideoCodec.defaultHeight {
-        didSet {
-            guard height != oldValue else {
-                return
-            }
-            invalidateSession = true
-        }
-    }
-    #if os(macOS)
-    var enabledHardwareEncoder = true {
-        didSet {
-            guard enabledHardwareEncoder != oldValue else {
-                return
-            }
-            invalidateSession = true
-        }
-    }
-    #endif
-    var bitrate = VideoCodec.defaultBitrate {
-        didSet {
-            guard bitrate != oldValue else {
-                return
-            }
-            let option = VTSessionOption(key: .averageBitRate, value: NSNumber(value: bitrate))
-            if let status = session?.setOption(option), status != noErr {
-                delegate?.videoCodec(self, errorOccurred: .failedToSetOption(status: status, option: option))
-            }
-        }
-    }
-    var profileLevel = kVTProfileLevel_H264_Baseline_3_1 as String {
-        didSet {
-            guard profileLevel != oldValue else {
-                return
-            }
-            invalidateSession = true
-        }
-    }
-    var maxKeyFrameIntervalDuration = 2.0 {
-        didSet {
-            guard maxKeyFrameIntervalDuration != oldValue else {
-                return
-            }
-            invalidateSession = true
-        }
-    }
-    // swiftlint:disable discouraged_optional_boolean
-    var allowFrameReordering: Bool? = false {
-        didSet {
-            guard allowFrameReordering != oldValue else {
-                return
-            }
-            invalidateSession = true
-        }
-    }
-    var locked: UInt32 = 0
     var lockQueue = DispatchQueue(label: "com.haishinkit.HaishinKit.VideoCodec.lock")
-    var expectedFrameRate = AVMixer.defaultFPS {
-        didSet {
-            guard expectedFrameRate != oldValue else {
-                return
-            }
-            let option = VTSessionOption(key: .expectedFrameRate, value: NSNumber(value: expectedFrameRate))
-            if let status = session?.setOption(option), status != noErr {
-                delegate?.videoCodec(self, errorOccurred: .failedToSetOption(status: status, option: option))
-            }
-        }
-    }
+
     var formatDescription: CMFormatDescription? {
         didSet {
             guard !CMFormatDescriptionEqual(formatDescription, otherFormatDescription: oldValue) else {
@@ -207,7 +98,7 @@ public class VideoCodec {
             }
             if let atoms: [String: AnyObject] = formatDescription?.`extension`(by: "SampleDescriptionExtensionAtoms"), let avcC: Data = atoms["avcC"] as? Data {
                 let config = AVCConfigurationRecord(data: avcC)
-                isBaseline = config.AVCProfileIndication == 66
+                isBaseline = config.avcProfileIndication == 66
             }
             delegate?.videoCodec(self, didSet: formatDescription)
         }
@@ -222,14 +113,14 @@ public class VideoCodec {
         for (key, value) in VideoCodec.defaultAttributes ?? [:] {
             attributes[key] = value
         }
-        attributes[kCVPixelBufferWidthKey] = NSNumber(value: width)
-        attributes[kCVPixelBufferHeightKey] = NSNumber(value: height)
+        attributes[kCVPixelBufferWidthKey] = NSNumber(value: settings.videoSize.width)
+        attributes[kCVPixelBufferHeightKey] = NSNumber(value: settings.videoSize.height)
         return attributes
     }
     weak var delegate: VideoCodecDelegate?
 
     private var lastImageBuffer: CVImageBuffer?
-    private var session: VTSessionConvertible? {
+    private(set) var session: VTSessionConvertible? {
         didSet {
             oldValue?.invalidate()
             invalidateSession = false
@@ -239,12 +130,8 @@ public class VideoCodec {
     private var buffers: [CMSampleBuffer] = []
     private var minimumGroupOfPictures: Int = VideoCodec.defaultMinimumGroupOfPictures
 
-    init() {
-        settings.observer = self
-    }
-
     func inputBuffer(_ imageBuffer: CVImageBuffer, presentationTimeStamp: CMTime, duration: CMTime) {
-        guard isRunning.value && locked == 0 else {
+        guard isRunning.value else {
             return
         }
         if invalidateSession {
@@ -256,11 +143,11 @@ public class VideoCodec {
             duration: duration
         ) { [unowned self] status, _, sampleBuffer in
             guard let sampleBuffer, status == noErr else {
-                self.delegate?.videoCodec(self, errorOccurred: .failedToFlame(status: status))
+                delegate?.videoCodec(self, errorOccurred: .failedToFlame(status: status))
                 return
             }
-            self.formatDescription = sampleBuffer.formatDescription
-            self.delegate?.videoCodec(self, didOutput: sampleBuffer)
+            formatDescription = sampleBuffer.formatDescription
+            delegate?.videoCodec(self, didOutput: sampleBuffer)
         }
     }
 
@@ -292,7 +179,7 @@ public class VideoCodec {
             )
 
             guard status == noErr else {
-                self.delegate?.videoCodec(self, errorOccurred: .failedToFlame(status: status))
+                delegate?.videoCodec(self, errorOccurred: .failedToFlame(status: status))
                 return
             }
 
@@ -309,48 +196,22 @@ public class VideoCodec {
             )
 
             guard let buffer = sampleBuffer, status == noErr else {
-                self.delegate?.videoCodec(self, errorOccurred: .failedToFlame(status: status))
+                delegate?.videoCodec(self, errorOccurred: .failedToFlame(status: status))
                 return
             }
 
-            if self.isBaseline {
-                self.delegate?.videoCodec(self, didOutput: buffer)
+            if isBaseline {
+                delegate?.videoCodec(self, didOutput: buffer)
             } else {
-                self.buffers.append(buffer)
-                self.buffers.sort {
+                buffers.append(buffer)
+                buffers.sort {
                     $0.presentationTimeStamp < $1.presentationTimeStamp
                 }
-                if self.minimumGroupOfPictures <= buffers.count {
-                    self.delegate?.videoCodec(self, didOutput: buffer)
+                if minimumGroupOfPictures <= buffers.count {
+                    delegate?.videoCodec(self, didOutput: buffers.removeFirst())
                 }
             }
         }
-    }
-
-    func options() -> Set<VTSessionOption> {
-        let isBaseline = profileLevel.contains("Baseline")
-        var options = Set<VTSessionOption>([
-            .init(key: .realTime, value: kCFBooleanTrue),
-            .init(key: .profileLevel, value: profileLevel as NSObject),
-            .init(key: .averageBitRate, value: NSNumber(value: bitrate)),
-            .init(key: .expectedFrameRate, value: NSNumber(value: expectedFrameRate)),
-            .init(key: .maxKeyFrameIntervalDuration, value: NSNumber(value: maxKeyFrameIntervalDuration)),
-            .init(key: .allowFrameReordering, value: (allowFrameReordering ?? !isBaseline) as NSObject),
-            .init(key: .pixelTransferProperties, value: [
-                "ScalingMode": scalingMode.rawValue
-            ] as NSObject)
-        ])
-        #if os(OSX)
-        if enabledHardwareEncoder {
-            options.insert(.init(key: .encoderID, value: VideoCodec.encoderName))
-            options.insert(.init(key: .enableHardwareAcceleratedVideoEncoder, value: kCFBooleanTrue))
-            options.insert(.init(key: .requireHardwareAcceleratedVideoEncoder, value: kCFBooleanTrue))
-        }
-        #endif
-        if !isBaseline {
-            options.insert(.init(key: .H264EntropyMode, value: kVTH264EntropyMode_CABAC))
-        }
-        return options
     }
 
     #if os(iOS)
@@ -382,7 +243,6 @@ extension VideoCodec: Running {
     public func startRunning() {
         lockQueue.async {
             self.isRunning.mutate { $0 = true }
-            OSAtomicAnd32Barrier(0, &self.locked)
             #if os(iOS)
             NotificationCenter.default.addObserver(
                 self,
@@ -409,7 +269,8 @@ extension VideoCodec: Running {
             self.lastImageBuffer = nil
             self.formatDescription = nil
             #if os(iOS)
-            NotificationCenter.default.removeObserver(self)
+            NotificationCenter.default.removeObserver(self, name: AVAudioSession.interruptionNotification, object: nil)
+            NotificationCenter.default.removeObserver(self, name: UIApplication.willEnterForegroundNotification, object: nil)
             #endif
             self.isRunning.mutate { $0 = false }
         }

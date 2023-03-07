@@ -14,8 +14,7 @@ public class MTHKView: MTKView {
     }
 
     #if !os(tvOS)
-    public var position: AVCaptureDevice.Position = .back
-    public var orientation: AVCaptureVideoOrientation = .portrait
+    public var videoOrientation: AVCaptureVideoOrientation = .portrait
     #endif
 
     private var currentSampleBuffer: CMSampleBuffer?
@@ -137,11 +136,7 @@ extension MTHKView: MTKViewDelegate {
         var scaledImage: CIImage = displayImage
 
         if isMirrored {
-            if #available(iOS 11.0, tvOS 11.0, macOS 10.13, *) {
-                scaledImage = scaledImage.oriented(.upMirrored)
-            } else {
-                scaledImage = scaledImage.oriented(forExifOrientation: 2)
-            }
+            scaledImage = scaledImage.oriented(.upMirrored)
         }
 
         scaledImage = scaledImage

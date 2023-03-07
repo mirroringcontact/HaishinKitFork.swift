@@ -3,9 +3,7 @@
 import AppKit
 import AVFoundation
 
-/**
- * A view that displays a video content of a NetStream object which uses AVCaptureVideoPreviewLayer.
- */
+/// A view that displays a video content of a NetStream object which uses AVCaptureVideoPreviewLayer.
 public class HKView: NSView {
     /// The view’s background color.
     public static var defaultBackgroundColor: NSColor = .black
@@ -22,14 +20,8 @@ public class HKView: NSView {
         currentStream?.mixer.videoIO.formatDescription
     }
 
-    public var position: AVCaptureDevice.Position = .front {
-        didSet {
-            DispatchQueue.main.async {
-                self.layer?.setNeedsLayout()
-            }
-        }
-    }
-    public var orientation: AVCaptureVideoOrientation = .portrait
+    public var videoOrientation: AVCaptureVideoOrientation = .portrait
+
     private var currentSampleBuffer: CMSampleBuffer?
 
     private weak var currentStream: NetStream? {

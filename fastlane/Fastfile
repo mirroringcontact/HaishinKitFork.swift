@@ -15,6 +15,7 @@
 
 desc "[CI] Review PullRequest."
 lane :review do
-  sh('xcodebuild', '-version')
-  spm()
+  spm
+  carthage(use_xcframeworks: true) if Helper.is_ci?
+  scan(scheme: 'Tests')
 end

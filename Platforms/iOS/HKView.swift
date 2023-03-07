@@ -32,7 +32,7 @@ public class HKView: UIView {
         currentStream?.mixer.videoIO.formatDescription
     }
 
-    public var orientation: AVCaptureVideoOrientation = .portrait {
+    public var videoOrientation: AVCaptureVideoOrientation = .portrait {
         didSet {
             let orientationChange = { [weak self] in
                 guard let self = self else {
@@ -40,7 +40,7 @@ public class HKView: UIView {
                 }
                 self.layer.connection.map {
                     if $0.isVideoOrientationSupported {
-                        $0.videoOrientation = self.orientation
+                        $0.videoOrientation = self.videoOrientation
                     }
                 }
             }
@@ -53,7 +53,7 @@ public class HKView: UIView {
             }
         }
     }
-    public var position: AVCaptureDevice.Position = .front
+
     private var currentSampleBuffer: CMSampleBuffer?
 
     private weak var currentStream: NetStream? {
@@ -97,7 +97,7 @@ extension HKView: NetStreamDrawable {
 
         stream.mixer.session.beginConfiguration()
         layer.session = stream.mixer.session
-        orientation = stream.mixer.videoIO.orientation
+        videoOrientation = stream.mixer.videoIO.videoOrientation
         stream.mixer.session.commitConfiguration()
 
         stream.lockQueue.async {

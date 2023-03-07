@@ -26,11 +26,11 @@ Enterprise Grade APIs for Feeds & Chat. <a href="https://getstream.io/tutorials/
 * If you want to support e-mail based communication without GitHub.
   - Consulting fee is [$50](https://www.paypal.me/shogo4405/50USD)/1 incident. I'm able to response a few days.
 * [Discord chatroom](https://discord.com/invite/8nkshPnanr).
-* 日本語が分かる方は日本語でお願いします！
+* 日本語が分かる方は、日本語でのコミニケーションをお願いします！
 
 ## 💖 Sponsors
 <p align="center">
-<a href="https://streamlabs.com/" target="_blank"><img src="https://user-images.githubusercontent.com/810189/158178478-cd0484eb-76cf-4e4a-92ef-be5e6228769e.png" width="350px" alt="Streamlabs" /></a>
+<a href="https://streamlabs.com/" target="_blank"><img src="https://user-images.githubusercontent.com/810189/206836172-9c360977-ab6b-4eff-860b-82d0e7b06318.png" width="350px" alt="Streamlabs" /></a>
 </p>
 
 ## 🎨 Features
@@ -55,6 +55,23 @@ Enterprise Grade APIs for Feeds & Chat. <a href="https://getstream.io/tutorials/
 - [x] HTTPService
 - [x] HLS Publish
 
+### Multi Camera
+Supports two camera video sources. A picture-in-picture display that shows the image of the secondary camera of the primary camera. Supports camera split display that displays horizontally and vertically.
+
+|Picture-In-Picture|Split|
+|:-:|:-:|
+|<img width="1382" alt="スクリーンショット 2022-12-30 15 57 38" src="https://user-images.githubusercontent.com/810189/210043421-ceb18cb7-9b50-43fa-a0a2-8b92b78d9df1.png">|<img width="1382" alt="スクリーンショット 2022-12-30 15 55 13" src="https://user-images.githubusercontent.com/810189/210043687-a99f21b6-28b2-4170-96de-6c814debd84d.png">|
+
+```swift
+let back = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+stream.attachCamera(back)
+
+if #available(iOS 13.0, *) {
+  let front = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
+  stream.attachMultiCamera(front)
+}
+```
+
 ### Rendering
 |-|[HKView](https://shogo4405.github.io/HaishinKit.swift/Classes/HKView.html)|[PiPHKView](https://shogo4405.github.io/HaishinKit.swift/Classes/PiPHKView.html)|[MTHKView](https://shogo4405.github.io/HaishinKit.swift/Classes/MTHKView.html)|
 |-|:---:|:---:|:---:|
@@ -64,8 +81,9 @@ Enterprise Grade APIs for Feeds & Chat. <a href="https://getstream.io/tutorials/
 |VisualEffect|×|◯|○|
 
 ### Others
+- [x] [Support multitasking camera access.](https://developer.apple.com/documentation/avfoundation/capture_setup/accessing_the_camera_while_multitasking)
 - [x] _Support tvOS 11.0+  (Technical Preview)_
-  - tvOS can't publish Camera and Microphone. Available playback feature.
+  - tvOS can't use camera and microphone devices.
 - [x] Hardware acceleration for H264 video encoding, AAC audio encoding
 - [x] Support "Allow app extension API only" option
 - [ ] ~~Support GPUImage framework (~> 0.5.12)~~
@@ -75,6 +93,7 @@ Enterprise Grade APIs for Feeds & Chat. <a href="https://getstream.io/tutorials/
 ## 🌏 Requirements
 |-|iOS|OSX|tvOS|Xcode|Swift|
 |:----:|:----:|:----:|:----:|:----:|:----:|
+|1.4.0+|11.0+|10.13+|10.2+|14.0+|5.7+|
 |1.3.0+|11.0+|10.13+|10.2+|14.0+|5.7+|
 |1.2.0+|9.0+|10.11+|10.2+|13.0+|5.5+|
 
@@ -107,7 +126,7 @@ source 'https://github.com/CocoaPods/Specs.git'
 use_frameworks!
 
 def import_pods
-    pod 'HaishinKit', '~> 1.3.0
+    pod 'HaishinKit', '~> 1.4.2
 end
 
 target 'Your Target'  do
@@ -117,35 +136,20 @@ end
 ```
 ### Carthage
 ```
-github "shogo4405/HaishinKit.swift" ~> 1.3.0
+github "shogo4405/HaishinKit.swift" ~> 1.4.2
 ```
 ### Swift Package Manager
 ```
 https://github.com/shogo4405/HaishinKit.swift
 ```
 
-## 💠 Donation
-- GitHub Sponsors
-  - https://github.com/sponsors/shogo4405
-- Paypal
-  - https://www.paypal.me/shogo4405
-
 ## 🔧 Prerequisites
-Make sure you setup and activate your AVAudioSession.
+Make sure you setup and activate your AVAudioSession iOS.
 ```swift
 import AVFoundation
 let session = AVAudioSession.sharedInstance()
 do {
-    // https://stackoverflow.com/questions/51010390/avaudiosession-setcategory-swift-4-2-ios-12-play-sound-on-silent
-    if #available(iOS 10.0, *) {
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-    } else {
-        session.perform(NSSelectorFromString("setCategory:withOptions:error:"), with: AVAudioSession.Category.playAndRecord, with: [
-            AVAudioSession.CategoryOptions.allowBluetooth,
-            AVAudioSession.CategoryOptions.defaultToSpeaker]
-        )
-        try session.setMode(.default)
-    }
+    try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
     try session.setActive(true)
 } catch {
     print(error)
@@ -192,52 +196,78 @@ rtmpStream.publish("streamName")
 
 ### Settings
 ```swift
-var rtmpStream = RTMPStream(connection: rtmpConnection)
+var stream = RTMPStream(connection: rtmpConnection)
 
-rtmpStream.captureSettings = [
-    .fps: 30, // FPS
-    .sessionPreset: AVCaptureSession.Preset.medium, // input video width/height
-    // .isVideoMirrored: false,
-    // .continuousAutofocus: false, // use camera autofocus mode
-    // .continuousExposure: false, //  use camera exposure mode
-    // .preferredVideoStabilizationMode: AVCaptureVideoStabilizationMode.auto
+stream.frameRate = 30
+stream.sessionPreset = AVCaptureSession.Preset.medium
+
+/// Specifies the video capture settings.
+stream.videoCapture(for: 0).isVideoMirrored = false
+stream.videoCapture(for: 0).preferredVideoStabilizationMode = .auto
+// rtmpStream.videoCapture(for: 1).isVideoMirrored = false
+
+// Specifies the audio codec settings.
+stream.audioSettings = [
+  .bitrate: 32 * 1000,
 ]
-rtmpStream.audioSettings = [
-    .muted: false, // mute audio
-    .bitrate: 32 * 1000,
+
+// Specifies the video codec settings.
+stream.videoSettings = [
+  .width: 640, // video output width
+  .height: 360, // video output height
+  .bitrate: 160 * 1000, // video output bitrate
+  .profileLevel: kVTProfileLevel_H264_Baseline_3_1, // H264 Profile require "import VideoToolbox"
+  .maxKeyFrameIntervalDuration: 2, // key frame / sec
 ]
-rtmpStream.videoSettings = [
-    .width: 640, // video output width
-    .height: 360, // video output height
-    .bitrate: 160 * 1000, // video output bitrate
-    .profileLevel: kVTProfileLevel_H264_Baseline_3_1, // H264 Profile require "import VideoToolbox"
-    .maxKeyFrameIntervalDuration: 2, // key frame / sec
-]
-// "0" means the same of input
-rtmpStream.recorderSettings = [
-    AVMediaType.audio: [
-        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-        AVSampleRateKey: 0,
-        AVNumberOfChannelsKey: 0,
-        // AVEncoderBitRateKey: 128000,
-    ],
-    AVMediaType.video: [
-        AVVideoCodecKey: AVVideoCodecH264,
-        AVVideoHeightKey: 0,
-        AVVideoWidthKey: 0,
-        /*
-        AVVideoCompressionPropertiesKey: [
-            AVVideoMaxKeyFrameIntervalDurationKey: 2,
-            AVVideoProfileLevelKey: AVVideoProfileLevelH264Baseline30,
-            AVVideoAverageBitRateKey: 512000
-        ]
-        */
-    ],
-]
+
+// Specifies the recording settings. 0" means the same of input.
+stream.startRecording([
+  AVMediaType.audio: [
+    AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+    AVSampleRateKey: 0,
+    AVNumberOfChannelsKey: 0,
+    // AVEncoderBitRateKey: 128000,
+  ],
+  AVMediaType.video: [
+    AVVideoCodecKey: AVVideoCodecH264,
+    AVVideoHeightKey: 0,
+    AVVideoWidthKey: 0,
+    /*
+    AVVideoCompressionPropertiesKey: [
+      AVVideoMaxKeyFrameIntervalDurationKey: 2,
+      AVVideoProfileLevelKey: AVVideoProfileLevelH264Baseline30,
+      AVVideoAverageBitRateKey: 512000
+    ]
+    */
+  ]
+])
 
 // 2nd arguemnt set false
-rtmpStream.attachAudio(AVCaptureDevice.default(for: .audio), automaticallyConfiguresApplicationAudioSession: false)
+stream.attachAudio(AVCaptureDevice.default(for: .audio), automaticallyConfiguresApplicationAudioSession: false)
+```
 
+```swift
+// picrure in picrure settings.
+stream.multiCamCaptureSettings = MultiCamCaptureSetting(
+  mode: .pip,
+  cornerRadius: 16.0,
+  regionOfInterest: .init(
+    origin: CGPoint(x: 16, y: 16),
+    size: .init(width: 160, height: 160)
+  )
+)
+```
+
+```swift
+// split settings.
+stream.multiCamCaptureSettings = MultiCamCaptureSetting(
+  mode: .split(direction: .east),
+  cornerRadius: 0.0,
+  regionOfInterest: .init(
+    origin: .zero,
+    size: .zero
+  )
+)
 ```
 ### Authentication
 ```swift
@@ -248,7 +278,10 @@ rtmpConnection.connect("rtmp://username:password@localhost/appName/instanceName"
 ### Screen Capture
 ```swift
 // iOS
-rtmpStream.attachScreen(ScreenCaptureSession(shared: UIApplication.shared))
+let screen = IOUIScreenCaptureUnit(shared: UIApplication.shared)
+screen.delegate = rtmpStream
+screen.startRunning()
+
 // macOS
 rtmpStream.attachScreen(AVCaptureScreenInput(displayID: CGMainDisplayID()))
 ```
@@ -271,6 +304,27 @@ httpService.addHTTPStream(httpStream)
 // add ViewController#view
 view.addSubview(hkView)
 ```
+
+## 💠 Sponsorship
+Looking for sponsors. Sponsoring I will enable us to:
+- Purchase smartphones or peripheral devices for testing purposes.
+- Pay for testing on a specific streaming service or for testing on mobile lines.
+- Potentially private use to continue the OSS development
+
+ If you use any of our libraries for work, see if your employers would be interested in sponsorship. I have some special offers.　I would greatly appreciate. Thank you.
+ - If you request I will note your name product our README.
+ - If you mention on a discussion, an issue or pull request that you are sponsoring us I will prioritise helping you even higher.
+
+スポンサーを募集しています。利用用途としては、
+- テスト目的で、スマートフォンの購入や周辺機器の購入を行います。
+- 特定のストリーミングサービスへのテストの支払いや、モバイル回線でのテストの支払いに利用します。
+- 著書のOSS開発を継続的に行う為に私的に利用する可能性もあります。
+
+このライブラリーを仕事で継続的に利用している場合は、ぜひ。雇用主に、スポンサーに興味がないか確認いただけると幸いです。いくつか特典を用意しています。
+- README.mdへの企業ロゴの掲載
+- IssueやPull Requestの優先的な対応
+
+[Sponsorship](https://github.com/sponsors/shogo4405)
 
 ## 📖 Reference
 * Adobe’s Real Time Messaging Protocol

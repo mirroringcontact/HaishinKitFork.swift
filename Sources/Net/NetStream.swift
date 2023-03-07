@@ -1,5 +1,9 @@
 import AVFoundation
 import CoreImage
+import CoreMedia
+#if canImport(ScreenCaptureKit)
+import ScreenCaptureKit
+#endif
 
 /// The `NetStream` class is the foundation of a RTMPStream, HTTPStream.
 open class NetStream: NSObject {
@@ -14,13 +18,10 @@ open class NetStream: NSObject {
     private static let queueValue = UnsafeMutableRawPointer.allocate(byteCount: 1, alignment: 1)
 
     /// The mixer object.
-    public private(set) var mixer = AVMixer()
-
-    /// Specifies the metadata for the stream.
-    public var metadata: [String: Any?] = [:]
+    public private(set) var mixer = IOMixer()
 
     /// Specifies the context object.
-    public var context: CIContext? {
+    public var context: CIContext {
         get {
             mixer.videoIO.context
         }
@@ -46,13 +47,55 @@ open class NetStream: NSObject {
         }
     }
 
-    /// Specify the video orientation for stream.
-    public var videoOrientation: AVCaptureVideoOrientation {
+    /// Specifies the frame rate of a device capture.
+    public var frameRate: Float64 {
         get {
-            mixer.videoIO.orientation
+            var frameRate: Float64 = IOMixer.defaultFrameRate
+            lockQueue.sync {
+                frameRate = self.mixer.videoIO.frameRate
+            }
+            return frameRate
         }
         set {
-            mixer.videoIO.orientation = newValue
+            lockQueue.async {
+                self.mixer.videoIO.frameRate = newValue
+            }
+        }
+    }
+
+    /// Specifies the sessionPreset for the AVCaptureSession.
+    public var sessionPreset: AVCaptureSession.Preset {
+        get {
+            var sessionPreset: AVCaptureSession.Preset = .default
+            lockQueue.sync {
+                sessionPreset = self.mixer.sessionPreset
+            }
+            return sessionPreset
+        }
+        set {
+            lockQueue.async {
+                self.mixer.sessionPreset = newValue
+            }
+        }
+    }
+
+    /// Specifies the video orientation for stream.
+    public var videoOrientation: AVCaptureVideoOrientation {
+        get {
+            mixer.videoIO.videoOrientation
+        }
+        set {
+            mixer.videoIO.videoOrientation = newValue
+        }
+    }
+
+    /// Specifies the multi camera capture properties.
+    public var multiCamCaptureSettings: MultiCamCaptureSettings {
+        get {
+            mixer.videoIO.multiCamCaptureSettings
+        }
+        set {
+            mixer.videoIO.multiCamCaptureSettings = newValue
         }
     }
     #endif
@@ -60,25 +103,25 @@ open class NetStream: NSObject {
     /// Specifies the hasAudio indicies whether no signal audio or not.
     public var hasAudio: Bool {
         get {
-            mixer.audioIO.muted
+            !mixer.audioIO.muted
         }
         set {
-            mixer.audioIO.muted = newValue
+            mixer.audioIO.muted = !newValue
         }
     }
 
     /// Specifies the hasVideo indicies whether freeze video signal or not.
     public var hasVideo: Bool {
         get {
-            mixer.videoIO.muted
+            !mixer.videoIO.muted
         }
         set {
-            mixer.videoIO.muted = newValue
+            mixer.videoIO.muted = !newValue
         }
     }
 
-    /// Specify the audio compression properties.
-    public var audioSettings: Setting<AudioCodec, AudioCodec.Option> {
+    /// Specifies the audio compression properties.
+    public var audioSettings: AudioCodecSettings {
         get {
             mixer.audioIO.codec.settings
         }
@@ -87,8 +130,8 @@ open class NetStream: NSObject {
         }
     }
 
-    /// Specify the video compression properties.
-    public var videoSettings: Setting<VideoCodec, VideoCodec.Option> {
+    /// Specifies the video compression properties.
+    public var videoSettings: VideoCodecSettings {
         get {
             mixer.videoIO.codec.settings
         }
@@ -97,59 +140,64 @@ open class NetStream: NSObject {
         }
     }
 
-    /// Specify the avsession properties.
-    open var captureSettings: Setting<AVMixer, AVMixer.Option> {
-        get {
-            mixer.settings
-        }
-        set {
-            mixer.settings = newValue
-        }
-    }
-
-    /// Specifies the recorder properties.
-    public var recorderSettings: [AVMediaType: [String: Any]] {
-        get {
-            mixer.recorder.outputSettings
-        }
-        set {
-            mixer.recorder.outputSettings = newValue
-        }
-    }
-
-    deinit {
-        metadata.removeAll()
-    }
-
     #if os(iOS) || os(macOS)
-    /// Attaches the camera object.
+    /// Attaches the primary camera object.
     /// - Warning: This method can't use appendSampleBuffer at the same time.
-    open func attachCamera(_ camera: AVCaptureDevice?, onError: ((_ error: NSError) -> Void)? = nil) {
+    open func attachCamera(_ device: AVCaptureDevice?, onError: ((_ error: Error) -> Void)? = nil) {
         lockQueue.async {
             do {
-                try self.mixer.videoIO.attachCamera(camera)
-            } catch let error as NSError {
+                try self.mixer.videoIO.attachCamera(device)
+            } catch {
                 onError?(error)
             }
         }
     }
 
-    /// Attaches the microphone object.
+    /// Attaches the 2ndary camera  object for picture in picture.
     /// - Warning: This method can't use appendSampleBuffer at the same time.
-    open func attachAudio(_ audio: AVCaptureDevice?, automaticallyConfiguresApplicationAudioSession: Bool = false, onError: ((_ error: NSError) -> Void)? = nil) {
+    @available(iOS 13.0, *)
+    open func attachMultiCamera(_ device: AVCaptureDevice?, onError: ((_ error: Error) -> Void)? = nil) {
         lockQueue.async {
             do {
-                try self.mixer.audioIO.attachAudio(audio, automaticallyConfiguresApplicationAudioSession: automaticallyConfiguresApplicationAudioSession)
-            } catch let error as NSError {
+                try self.mixer.videoIO.attachMultiCamera(device)
+            } catch {
                 onError?(error)
             }
         }
     }
 
-    /// Set the point of interest.
-    public func setPointOfInterest(_ focus: CGPoint, exposure: CGPoint) {
-        mixer.videoIO.focusPointOfInterest = focus
-        mixer.videoIO.exposurePointOfInterest = exposure
+    /// Attaches the audio capture object.
+    /// - Warning: This method can't use appendSampleBuffer at the same time.
+    open func attachAudio(_ device: AVCaptureDevice?, automaticallyConfiguresApplicationAudioSession: Bool = false, onError: ((_ error: Error) -> Void)? = nil) {
+        lockQueue.async {
+            do {
+                try self.mixer.audioIO.attachAudio(device, automaticallyConfiguresApplicationAudioSession: automaticallyConfiguresApplicationAudioSession)
+            } catch {
+                onError?(error)
+            }
+        }
+    }
+
+    /// Attaches the screen input object.
+    @available(iOS, unavailable)
+    open func attachScreen(_ input: AVCaptureScreenInput?) {
+        lockQueue.async {
+            self.mixer.videoIO.attachScreen(input)
+        }
+    }
+
+    /// Returns the IOVideoCaptureUnit by index.
+    public func videoCapture(for index: Int) -> IOVideoCaptureUnit? {
+        return mixer.videoIO.lockQueue.sync {
+            switch index {
+            case 0:
+                return self.mixer.videoIO.capture
+            case 1:
+                return self.mixer.videoIO.multiCamCapture
+            default:
+                return nil
+            }
+        }
     }
     #endif
 
@@ -199,7 +247,8 @@ open class NetStream: NSObject {
     }
 
     /// Starts recording.
-    public func startRecording() {
+    public func startRecording(_ settings: [AVMediaType: [String: Any]]) {
+        mixer.recorder.outputSettings = settings
         mixer.recorder.startRunning()
     }
 
@@ -208,3 +257,56 @@ open class NetStream: NSObject {
         mixer.recorder.stopRunning()
     }
 }
+
+extension NetStream: IOScreenCaptureUnitDelegate {
+    // MARK: IOScreenCaptureUnitDelegate
+    public func session(_ session: IOScreenCaptureUnit, didOutput pixelBuffer: CVPixelBuffer, presentationTime: CMTime) {
+        var timingInfo = CMSampleTimingInfo(
+            duration: .invalid,
+            presentationTimeStamp: presentationTime,
+            decodeTimeStamp: .invalid
+        )
+        var videoFormatDescription: CMVideoFormatDescription?
+        var status = CMVideoFormatDescriptionCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            formatDescriptionOut: &videoFormatDescription
+        )
+        guard status == noErr else {
+            return
+        }
+        var sampleBuffer: CMSampleBuffer?
+        status = CMSampleBufferCreateForImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: pixelBuffer,
+            dataReady: true,
+            makeDataReadyCallback: nil,
+            refcon: nil,
+            formatDescription: videoFormatDescription!,
+            sampleTiming: &timingInfo,
+            sampleBufferOut: &sampleBuffer
+        )
+        guard let sampleBuffer, status == noErr else {
+            return
+        }
+        appendSampleBuffer(sampleBuffer, withType: .video)
+    }
+}
+
+#if os(macOS)
+extension NetStream: SCStreamOutput {
+    @available(macOS 12.3, *)
+    public func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        if #available(macOS 13.0, *) {
+            switch type {
+            case .screen:
+                appendSampleBuffer(sampleBuffer, withType: .video)
+            default:
+                appendSampleBuffer(sampleBuffer, withType: .audio)
+            }
+        } else {
+            appendSampleBuffer(sampleBuffer, withType: .video)
+        }
+    }
+}
+#endif
