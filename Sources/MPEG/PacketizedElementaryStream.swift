@@ -68,7 +68,7 @@ struct PESOptionalHeader {
         pesHeaderLength = UInt8(optionalFields.count)
     }
 
-    func makeSampleTimingInfo() -> CMSampleTimingInfo? {
+    func makeSampleTimingInfo(_ previousPresentationTimeStamp: CMTime) -> CMSampleTimingInfo? {
         var presentationTimeStamp: CMTime = .invalid
         var decodeTimeStamp: CMTime = .invalid
         if ptsDtsIndicator & 0x02 == 0x02 {
@@ -80,7 +80,7 @@ struct PESOptionalHeader {
             decodeTimeStamp = .init(value: dts, timescale: CMTimeScale(TSTimestamp.resolution))
         }
         return CMSampleTimingInfo(
-            duration: .invalid,
+            duration: presentationTimeStamp - previousPresentationTimeStamp,
             presentationTimeStamp: presentationTimeStamp,
             decodeTimeStamp: decodeTimeStamp
         )
@@ -326,17 +326,25 @@ struct PacketizedElementaryStream: PESPacketHeader {
         return data.count
     }
 
-    mutating func makeSampleBuffer(_ streamType: ESStreamType, formatDescription: CMFormatDescription?) -> CMSampleBuffer? {
+    mutating func makeSampleBuffer(_ streamType: ESStreamType, previousPresentationTimeStamp: CMTime, formatDescription: CMFormatDescription?) -> CMSampleBuffer? {
+        let blockBuffer = data.makeBlockBuffer(advancedBy: 0)
+        var sampleSizes: [Int] = []
         switch streamType {
         case .h264:
-            _ = AVCFormatStream.toVideoStream(&data)
+            _ = AVCFormatStream.toNALFileFormat(&data)
+            sampleSizes.append(blockBuffer?.dataLength ?? 0)
+        case .adtsAac:
+            let reader = ADTSReader()
+            reader.read(data)
+            var iterator = reader.makeIterator()
+            while let next = iterator.next() {
+                sampleSizes.append(next)
+            }
         default:
             break
         }
-        let blockBuffer = data.makeBlockBuffer(advancedBy: streamType.headerSize)
         var sampleBuffer: CMSampleBuffer?
-        var sampleSize: Int = blockBuffer?.dataLength ?? 0
-        var timing = optionalPESHeader?.makeSampleTimingInfo() ?? .invalid
+        var timing = optionalPESHeader?.makeSampleTimingInfo(previousPresentationTimeStamp) ?? .invalid
         guard let blockBuffer, CMSampleBufferCreate(
                 allocator: kCFAllocatorDefault,
                 dataBuffer: blockBuffer,
@@ -344,11 +352,11 @@ struct PacketizedElementaryStream: PESPacketHeader {
                 makeDataReadyCallback: nil,
                 refcon: nil,
                 formatDescription: formatDescription,
-                sampleCount: 1,
+                sampleCount: sampleSizes.count,
                 sampleTimingEntryCount: 1,
                 sampleTimingArray: &timing,
-                sampleSizeEntryCount: 1,
-                sampleSizeArray: &sampleSize,
+                sampleSizeEntryCount: sampleSizes.count,
+                sampleSizeArray: &sampleSizes,
                 sampleBufferOut: &sampleBuffer) == noErr else {
             return nil
         }

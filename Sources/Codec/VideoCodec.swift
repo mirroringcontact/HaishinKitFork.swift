@@ -130,7 +130,7 @@ public class VideoCodec {
     private var buffers: [CMSampleBuffer] = []
     private var minimumGroupOfPictures: Int = VideoCodec.defaultMinimumGroupOfPictures
 
-    func inputBuffer(_ imageBuffer: CVImageBuffer, presentationTimeStamp: CMTime, duration: CMTime) {
+    func appendImageBuffer(_ imageBuffer: CVImageBuffer, presentationTimeStamp: CMTime, duration: CMTime) {
         guard isRunning.value else {
             return
         }
@@ -151,7 +151,10 @@ public class VideoCodec {
         }
     }
 
-    func inputBuffer(_ sampleBuffer: CMSampleBuffer) {
+    func appendSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
+        guard isRunning.value else {
+            return
+        }
         if invalidateSession {
             session = VTSessionMode.decompression.makeSession(self)
             needsSync.mutate { $0 = true }
@@ -160,7 +163,7 @@ public class VideoCodec {
             needsSync.mutate { $0 = false }
         }
         session?.inputBuffer(sampleBuffer) { [unowned self] status, _, imageBuffer, presentationTimeStamp, duration in
-            guard let imageBuffer = imageBuffer, status == noErr else {
+            guard let imageBuffer, status == noErr else {
                 self.delegate?.videoCodec(self, errorOccurred: .failedToFlame(status: status))
                 return
             }

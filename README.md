@@ -39,8 +39,7 @@ Enterprise Grade APIs for Feeds & Chat. <a href="https://getstream.io/tutorials/
 - [x] Publish and Recording (H264/AAC)
 - [x] _Playback (Beta)_
 - [x] Adaptive bitrate streaming
-  - [x] Handling (see also [#126](/../../issues/126))
-  - [x] Automatic drop frames
+  - [x] Handling (see also [#1153](/../../issues/1153))
 - [ ] Action Message Format
   - [x] AMF0
   - [ ] AMF3
@@ -126,7 +125,7 @@ source 'https://github.com/CocoaPods/Specs.git'
 use_frameworks!
 
 def import_pods
-    pod 'HaishinKit', '~> 1.4.2
+    pod 'HaishinKit', '~> 1.4.4
 end
 
 target 'Your Target'  do
@@ -136,7 +135,7 @@ end
 ```
 ### Carthage
 ```
-github "shogo4405/HaishinKit.swift" ~> 1.4.2
+github "shogo4405/HaishinKit.swift" ~> 1.4.4
 ```
 ### Swift Package Manager
 ```
@@ -298,8 +297,8 @@ var hkView = HKView(frame: view.bounds)
 hkView.attachStream(httpStream)
 
 var httpService = HLSService(domain: "", type: "_http._tcp", name: "HaishinKit", port: 8080)
-httpService.startRunning()
 httpService.addHTTPStream(httpStream)
+httpService.startRunning()
 
 // add ViewController#view
 view.addSubview(hkView)

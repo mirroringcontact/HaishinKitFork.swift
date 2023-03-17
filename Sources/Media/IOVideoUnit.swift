@@ -271,7 +271,7 @@ final class IOVideoUnit: NSObject, IOUnit {
         if muted {
             imageBuffer = pixelBuffer
         }
-        codec.inputBuffer(
+        codec.appendImageBuffer(
             imageBuffer ?? buffer,
             presentationTimeStamp: sampleBuffer.presentationTimeStamp,
             duration: sampleBuffer.duration
@@ -340,5 +340,6 @@ extension IOVideoUnit: VideoCodecDelegate {
     }
 
     func videoCodec(_ codec: VideoCodec, errorOccurred error: VideoCodec.Error) {
+        logger.trace(error)
     }
 }
