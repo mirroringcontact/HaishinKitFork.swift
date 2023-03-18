@@ -31,7 +31,7 @@ public class PiPHKView: UIView {
     }
 
     #if !os(tvOS)
-    public var videoOrientation: AVCaptureVideoOrientation = .portrait {
+    public var orientation: AVCaptureVideoOrientation = .portrait {
         didSet {
             if Thread.isMainThread {
                 layer.flushAndRemoveImage()
@@ -42,6 +42,7 @@ public class PiPHKView: UIView {
             }
         }
     }
+    public var position: AVCaptureDevice.Position = .front
     #endif
     private var currentSampleBuffer: CMSampleBuffer?
 
@@ -124,7 +125,7 @@ public class PiPHKView: NSView {
         currentStream?.mixer.videoIO.formatDescription
     }
 
-    public var videoOrientation: AVCaptureVideoOrientation = .portrait {
+    public var orientation: AVCaptureVideoOrientation = .portrait {
         didSet {
             if Thread.isMainThread {
                 (layer as? AVSampleBufferDisplayLayer)?.flushAndRemoveImage()
@@ -135,6 +136,7 @@ public class PiPHKView: NSView {
             }
         }
     }
+    public var position: AVCaptureDevice.Position = .front
 
     private var currentSampleBuffer: CMSampleBuffer?
 

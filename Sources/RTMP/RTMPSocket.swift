@@ -4,7 +4,7 @@ import Foundation
 final class RTMPSocket: NetSocket, RTMPSocketCompatible {
     var readyState: RTMPSocketReadyState = .uninitialized {
         didSet {
-            delegate?.socket(self, readyState: readyState)
+            delegate?.didSetReadyState(readyState)
         }
     }
     var timestamp: TimeInterval {
@@ -17,7 +17,7 @@ final class RTMPSocket: NetSocket, RTMPSocketCompatible {
 
     override var totalBytesIn: Atomic<Int64> {
         didSet {
-            delegate?.socket(self, totalBytesIn: totalBytesIn.value)
+            delegate?.didSetTotalBytesIn(totalBytesIn.value)
         }
     }
 
@@ -38,12 +38,12 @@ final class RTMPSocket: NetSocket, RTMPSocketCompatible {
     private var events: [Event] = []
 
     @discardableResult
-    func doOutput(chunk: RTMPChunk) -> Int {
+    func doOutput(chunk: RTMPChunk, locked: UnsafeMutablePointer<UInt32>? = nil) -> Int {
         let chunks: [Data] = chunk.split(chunkSizeS)
         for i in 0..<chunks.count - 1 {
             doOutput(data: chunks[i])
         }
-        doOutput(data: chunks.last!)
+        doOutput(data: chunks.last!, locked: locked)
         if logger.isEnabledFor(level: .trace) {
             logger.trace(chunk)
         }
@@ -74,7 +74,7 @@ final class RTMPSocket: NetSocket, RTMPSocketCompatible {
             }
             let bytes: Data = inputBuffer
             inputBuffer.removeAll()
-            delegate?.socket(self, data: bytes)
+            delegate?.listen(bytes)
         default:
             break
         }

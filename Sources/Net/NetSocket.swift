@@ -1,31 +1,27 @@
 import Foundation
 
-/// The NetSocket class creates a two-way connection between a client and a server as a client. This class is wrapper for a InputStream and an OutputStream.
+/// The NetSocket class creates a two-way connection  between a client and a server. This class is wrapper for a InputStream and an OutputStream.
 open class NetSocket: NSObject {
     /// The default time to wait for TCP/IP Handshake done.
     public static let defaultTimeout: Int = 15 // sec
-    /// The defulat stream's TCP window size.
     public static let defaultWindowSizeC = Int(UInt16.max)
-    /// The current incoming data buffer.
-    public var inputBuffer = Data()
-    /// Specifies time to wait for TCP/IP Handshake done.
-    public var timeout: Int = NetSocket.defaultTimeout
-    /// Specifies  instance connected to server(true) or not(false).
-    public var connected = false
-    /// Specifies the output buffer size in bytes.
-    public var windowSizeC: Int = NetSocket.defaultWindowSizeC
-    /// Specifies  statistics of total incoming bytes.
-    public var totalBytesIn: Atomic<Int64> = .init(0)
-    /// Specifies  instance's quality of service for a Socket IO.
-    public var qualityOfService: DispatchQoS = .userInitiated
-    /// Specifies instance determine to use the secure-socket layer (SSL) security level.
-    public var securityLevel: StreamSocketSecurityLevel = .none
-    /// Specifies the output buffer size in bytes.
-    public var outputBufferSize: Int = NetSocket.defaultWindowSizeC
-    /// Specifies  statistics of total outgoing bytes.
-    public private(set) var totalBytesOut: Atomic<Int64> = .init(0)
-    /// Specifies  statistics of total outgoing queued bytes.
-    public private(set) var queueBytesOut: Atomic<Int64> = .init(0)
+
+    open var inputBuffer = Data()
+    /// The time to wait for TCP/IP Handshake done.
+    open var timeout: Int = NetSocket.defaultTimeout
+    /// This instance connected to server(true) or not(false).
+    open var connected = false
+    open var windowSizeC: Int = NetSocket.defaultWindowSizeC
+    /// The statistics of total incoming bytes.
+    open var totalBytesIn: Atomic<Int64> = .init(0)
+    /// The instance's quality of service for a Socket IO.
+    open var qualityOfService: DispatchQoS = .userInitiated
+    /// The instance determine to use the secure-socket layer (SSL) security level.
+    open var securityLevel: StreamSocketSecurityLevel = .none
+    /// The statistics of total outgoing bytes.
+    open private(set) var totalBytesOut: Atomic<Int64> = .init(0)
+    /// The statistics of total outgoing queued bytes.
+    open private(set) var queueBytesOut: Atomic<Int64> = .init(0)
 
     var inputStream: InputStream? {
         didSet {
@@ -56,7 +52,7 @@ open class NetSocket: NSObject {
     lazy var inputQueue = DispatchQueue(label: "com.haishinkit.HaishinKit.NetSocket.input", qos: qualityOfService)
     private var timeoutHandler: DispatchWorkItem?
     private lazy var buffer = [UInt8](repeating: 0, count: windowSizeC)
-    private lazy var outputBuffer: DataBuffer = .init(capacity: outputBufferSize)
+    private lazy var outputBuffer: CircularBuffer = .init(capacity: windowSizeC)
     private lazy var outputQueue: DispatchQueue = .init(label: "com.haishinkit.HaishinKit.NetSocket.output", qos: qualityOfService)
 
     deinit {
@@ -77,7 +73,6 @@ open class NetSocket: NSObject {
         }
     }
 
-    /// Does output data buffer to the server.
     @discardableResult
     public func doOutput(data: Data, locked: UnsafeMutablePointer<UInt32>? = nil) -> Int {
         queueBytesOut.mutate { $0 += Int64(data.count) }
@@ -85,7 +80,7 @@ open class NetSocket: NSObject {
             guard let self = self else {
                 return
             }
-            self.outputBuffer.append(data)
+            self.outputBuffer.append(data, locked: locked)
             if let outputStream = self.outputStream, outputStream.hasSpaceAvailable {
                 self.doOutput(outputStream)
             }
@@ -93,12 +88,10 @@ open class NetSocket: NSObject {
         return data.count
     }
 
-    /// Closes the connection from the server.
     open func close() {
         close(isDisconnected: false)
     }
 
-    /// Listen incoming data buffer from the server.
     open func listen() {
     }
 
@@ -112,15 +105,11 @@ open class NetSocket: NSObject {
         guard let inputStream = inputStream, let outputStream = outputStream else {
             return
         }
+        outputBuffer.clear()
         totalBytesIn.mutate { $0 = 0 }
         totalBytesOut.mutate { $0 = 0 }
         queueBytesOut.mutate { $0 = 0 }
         inputBuffer.removeAll(keepingCapacity: false)
-        if outputBuffer.capacity < outputBufferSize {
-            outputBuffer = .init(capacity: outputBufferSize)
-        } else {
-            outputBuffer.clear()
-        }
         inputStream.open()
         outputStream.open()
         if 0 < timeout {
@@ -164,7 +153,7 @@ open class NetSocket: NSObject {
         guard let bytes = outputBuffer.bytes, 0 < outputBuffer.maxLength else {
             return
         }
-        let length = outputStream.write(bytes, maxLength: min(windowSizeC, outputBuffer.maxLength))
+        let length = outputStream.write(bytes, maxLength: outputBuffer.maxLength)
         if 0 < length {
             totalBytesOut.mutate { $0 += Int64(length) }
             queueBytesOut.mutate { $0 -= Int64(length) }

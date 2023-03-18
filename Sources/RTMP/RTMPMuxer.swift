@@ -25,22 +25,22 @@ final class RTMPMuxer {
 
 extension RTMPMuxer: AudioCodecDelegate {
     // MARK: AudioCodecDelegate
-    func audioCodec(_ codec: AudioCodec, errorOccurred error: AudioCodec.Error) {
-    }
-
-    func audioCodec(_ codec: AudioCodec, didSet outputFormat: AVAudioFormat) {
+    func audioCodec(_ codec: AudioCodec, didSet formatDescription: CMFormatDescription?) {
+        guard let formatDescription = formatDescription else {
+            return
+        }
         var buffer = Data([RTMPMuxer.aac, FLVAACPacketType.seq.rawValue])
-        buffer.append(contentsOf: AudioSpecificConfig(formatDescription: outputFormat.formatDescription).bytes)
+        buffer.append(contentsOf: AudioSpecificConfig(formatDescription: formatDescription).bytes)
         delegate?.muxer(self, didOutputAudio: buffer, withTimestamp: 0)
     }
 
-    func audioCodec(_ codec: AudioCodec, didOutput audioBuffer: AVAudioBuffer, presentationTimeStamp: CMTime) {
+    func audioCodec(_ codec: AudioCodec, didOutput sample: UnsafeMutableAudioBufferListPointer, presentationTimeStamp: CMTime) {
         let delta = (audioTimeStamp == CMTime.zero ? 0 : presentationTimeStamp.seconds - audioTimeStamp.seconds) * 1000
-        guard let audioBuffer = audioBuffer as? AVAudioCompressedBuffer, 0 <= delta else {
+        guard let bytes = sample[0].mData, 0 < sample[0].mDataByteSize && 0 <= delta else {
             return
         }
         var buffer = Data([RTMPMuxer.aac, FLVAACPacketType.raw.rawValue])
-        buffer.append(audioBuffer.data.assumingMemoryBound(to: UInt8.self), count: Int(audioBuffer.byteLength))
+        buffer.append(bytes.assumingMemoryBound(to: UInt8.self), count: Int(sample[0].mDataByteSize))
         delegate?.muxer(self, didOutputAudio: buffer, withTimestamp: delta)
         audioTimeStamp = presentationTimeStamp
     }
@@ -60,16 +60,16 @@ extension RTMPMuxer: VideoCodecDelegate {
     }
 
     func videoCodec(_ codec: VideoCodec, didOutput sampleBuffer: CMSampleBuffer) {
-        let keyframe = !sampleBuffer.isNotSync
+        let keyframe: Bool = !sampleBuffer.isNotSync
         var compositionTime: Int32 = 0
-        let presentationTimeStamp = sampleBuffer.presentationTimeStamp
-        var decodeTimeStamp = sampleBuffer.decodeTimeStamp
+        let presentationTimeStamp: CMTime = sampleBuffer.presentationTimeStamp
+        var decodeTimeStamp: CMTime = sampleBuffer.decodeTimeStamp
         if decodeTimeStamp == CMTime.invalid {
             decodeTimeStamp = presentationTimeStamp
         } else {
             compositionTime = (videoTimeStamp == .zero) ? 0 : Int32((sampleBuffer.presentationTimeStamp.seconds - videoTimeStamp.seconds) * 1000)
         }
-        let delta = (videoTimeStamp == .zero ? 0 : decodeTimeStamp.seconds - videoTimeStamp.seconds) * 1000
+        let delta = (videoTimeStamp == CMTime.zero ? 0 : decodeTimeStamp.seconds - videoTimeStamp.seconds) * 1000
         guard let data = sampleBuffer.dataBuffer?.data, 0 <= delta else {
             return
         }

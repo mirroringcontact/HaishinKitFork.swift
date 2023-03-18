@@ -11,8 +11,7 @@ open class HTTPStream: NetStream {
             tsWriter.expectedMedias = newValue
         }
     }
-    public var appGroupsId: String = ""
-    
+
     /// The name of stream.
     private(set) var name: String?
     private lazy var tsWriter = TSFileWriter()
@@ -26,30 +25,29 @@ open class HTTPStream: NetStream {
                 return
             }
             self.name = name
-            self.mixer.startEncoding(self.tsWriter)
+            self.mixer.startEncoding(delegate: self.tsWriter)
             self.mixer.startRunning()
             self.tsWriter.startRunning()
-            self.tsWriter.appGroupsId = self.appGroupsId
         }
     }
 
     #if os(iOS) || os(macOS)
-    override open func attachCamera(_ device: AVCaptureDevice?, onError: ((Error) -> Void)? = nil) {
-        if device == nil {
+    override open func attachCamera(_ camera: AVCaptureDevice?, onError: ((NSError) -> Void)? = nil) {
+        if camera == nil {
             tsWriter.expectedMedias.remove(.video)
         } else {
             tsWriter.expectedMedias.insert(.video)
         }
-        super.attachCamera(device, onError: onError)
+        super.attachCamera(camera, onError: onError)
     }
 
-    override open func attachAudio(_ device: AVCaptureDevice?, automaticallyConfiguresApplicationAudioSession: Bool = true, onError: ((Error) -> Void)? = nil) {
-        if device == nil {
+    override open func attachAudio(_ audio: AVCaptureDevice?, automaticallyConfiguresApplicationAudioSession: Bool = true, onError: ((NSError) -> Void)? = nil) {
+        if audio == nil {
             tsWriter.expectedMedias.remove(.audio)
         } else {
             tsWriter.expectedMedias.insert(.audio)
         }
-        super.attachAudio(device, automaticallyConfiguresApplicationAudioSession: automaticallyConfiguresApplicationAudioSession, onError: onError)
+        super.attachAudio(audio, automaticallyConfiguresApplicationAudioSession: automaticallyConfiguresApplicationAudioSession, onError: onError)
     }
     #endif
 

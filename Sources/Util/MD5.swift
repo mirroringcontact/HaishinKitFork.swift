@@ -5,7 +5,7 @@ import Foundation
  - seealso: https://ja.wikipedia.org/wiki/MD5
  - seealso: https://www.ietf.org/rfc/rfc1321.txt
  */
-enum MD5 {
+final class MD5 {
     static let a: UInt32 = 0x67452301
     static let b: UInt32 = 0xefcdab89
     static let c: UInt32 = 0x98badcfe

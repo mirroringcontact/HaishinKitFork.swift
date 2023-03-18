@@ -18,8 +18,7 @@ protocol Choreographer: Running {
 }
 
 final class DisplayLinkChoreographer: NSObject, Choreographer {
-    private static let duration = 0.0
-    private static let preferredFramesPerSecond = 0
+    static let defaultPreferredFramesPerSecond = 0
 
     var isPaused: Bool {
         get {
@@ -31,7 +30,7 @@ final class DisplayLinkChoreographer: NSObject, Choreographer {
     }
     weak var delegate: ChoreographerDelegate?
     var isRunning: Atomic<Bool> = .init(false)
-    private var duration: Double = DisplayLinkChoreographer.duration
+    private var duration: Double = 0.0
     private var displayLink: DisplayLink? {
         didSet {
             oldValue?.invalidate()
@@ -39,13 +38,17 @@ final class DisplayLinkChoreographer: NSObject, Choreographer {
                 return
             }
             displayLink.isPaused = true
-            displayLink.preferredFramesPerSecond = Self.preferredFramesPerSecond
+            if #available(iOS 10.0, tvOS 10.0, *) {
+                displayLink.preferredFramesPerSecond = Self.defaultPreferredFramesPerSecond
+            } else {
+                displayLink.frameInterval = 1
+            }
             displayLink.add(to: .main, forMode: .common)
         }
     }
 
     func clear() {
-        duration = Self.duration
+        duration = 0.0
     }
 
     @objc
@@ -63,7 +66,7 @@ extension DisplayLinkChoreographer: Running {
 
     func stopRunning() {
         displayLink = nil
-        duration = DisplayLinkChoreographer.duration
+        duration = 0.0
         isRunning.mutate { $0 = false }
     }
 }
