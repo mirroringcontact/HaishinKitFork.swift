@@ -13,7 +13,7 @@ import Foundation
 // MARK: -
 /// The NetClient class creates a two-way connection  between a NetService.
 public final class NetClient: NetSocket {
-    weak var delegate: NetClientDelegate?
+    weak var delegate: (any NetClientDelegate)?
 
     init(inputStream: InputStream, outputStream: OutputStream) {
         super.init()

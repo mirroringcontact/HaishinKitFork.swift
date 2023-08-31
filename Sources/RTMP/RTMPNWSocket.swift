@@ -5,20 +5,32 @@ import Network
 
 @available(iOS 12.0, macOS 10.14, tvOS 12.0, *)
 final class RTMPNWSocket: RTMPSocketCompatible {
+    static let defaultWindowSizeC = Int(UInt8.max)
+
     var timestamp: TimeInterval = 0.0
     var chunkSizeC: Int = RTMPChunk.defaultSize
     var chunkSizeS: Int = RTMPChunk.defaultSize
-    var windowSizeC = Int(UInt8.max)
+    var windowSizeC = RTMPNWSocket.defaultWindowSizeC
     var timeout: Int = NetSocket.defaultTimeout
     var readyState: RTMPSocketReadyState = .uninitialized {
         didSet {
-            delegate?.didSetReadyState(readyState)
+            delegate?.socket(self, readyState: readyState)
         }
     }
-    var securityLevel: StreamSocketSecurityLevel = .none
-    var qualityOfService: DispatchQoS = .default
+    var outputBufferSize: Int = RTMPNWSocket.defaultWindowSizeC
+    var securityLevel: StreamSocketSecurityLevel = .none {
+        didSet {
+            switch securityLevel {
+            case .ssLv2, .ssLv3, .tlSv1, .negotiatedSSL:
+                parameters = .tls
+            default:
+                parameters = .tcp
+            }
+        }
+    }
+    var qualityOfService: DispatchQoS = .userInitiated
     var inputBuffer = Data()
-    weak var delegate: RTMPSocketDelegate?
+    weak var delegate: (any RTMPSocketDelegate)?
 
     private(set) var queueBytesOut: Atomic<Int64> = .init(0)
     private(set) var totalBytesIn: Atomic<Int64> = .init(0)
@@ -41,6 +53,7 @@ final class RTMPNWSocket: RTMPSocketCompatible {
     private var handshake = RTMPHandshake()
     private var connection: NWConnection? {
         didSet {
+            oldValue?.viabilityUpdateHandler = nil
             oldValue?.stateUpdateHandler = nil
             oldValue?.forceCancel()
             if connection == nil {
@@ -49,8 +62,7 @@ final class RTMPNWSocket: RTMPSocketCompatible {
         }
     }
     private var parameters: NWParameters = .tcp
-    private lazy var inputQueue = DispatchQueue(label: "com.haishinkit.HaishinKit.NWSocket.input", qos: qualityOfService)
-    private lazy var outputQueue = DispatchQueue(label: "com.haishinkit.HaishinKit.NWSocket.output", qos: qualityOfService)
+    private lazy var networkQueue = DispatchQueue(label: "com.haishinkit.HaishinKit.RTMPNWSocket.network", qos: qualityOfService)
     private var timeoutHandler: DispatchWorkItem?
 
     func connect(withName: String, port: Int) {
@@ -63,8 +75,9 @@ final class RTMPNWSocket: RTMPSocketCompatible {
         queueBytesOut.mutate { $0 = 0 }
         inputBuffer.removeAll(keepingCapacity: false)
         connection = NWConnection(to: NWEndpoint.hostPort(host: .init(withName), port: .init(integerLiteral: NWEndpoint.Port.IntegerLiteralType(port))), using: parameters)
+        connection?.viabilityUpdateHandler = viabilityDidChange(to:)
         connection?.stateUpdateHandler = stateDidChange(to:)
-        connection?.start(queue: inputQueue)
+        connection?.start(queue: networkQueue)
         if let connection = connection {
             receive(on: connection)
         }
@@ -81,7 +94,7 @@ final class RTMPNWSocket: RTMPSocketCompatible {
     }
 
     func close(isDisconnected: Bool) {
-        guard connection != nil else {
+        guard let connection else {
             return
         }
         if isDisconnected {
@@ -90,17 +103,23 @@ final class RTMPNWSocket: RTMPSocketCompatible {
             events.append(Event(type: .rtmpStatus, bubbles: false, data: data))
         }
         readyState = .closing
+        if !isDisconnected && connection.state == .ready {
+            connection.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in
+                self.connection = nil
+            })
+        } else {
+            self.connection = nil
+        }
         timeoutHandler?.cancel()
-        connection = nil
     }
 
     @discardableResult
-    func doOutput(chunk: RTMPChunk, locked: UnsafeMutablePointer<UInt32>? = nil) -> Int {
+    func doOutput(chunk: RTMPChunk) -> Int {
         let chunks: [Data] = chunk.split(chunkSizeS)
         for i in 0..<chunks.count - 1 {
             doOutput(data: chunks[i])
         }
-        doOutput(data: chunks.last!, locked: locked)
+        doOutput(data: chunks.last!)
         if logger.isEnabledFor(level: .trace) {
             logger.trace(chunk)
         }
@@ -108,27 +127,19 @@ final class RTMPNWSocket: RTMPSocketCompatible {
     }
 
     @discardableResult
-    func doOutput(data: Data, locked: UnsafeMutablePointer<UInt32>? = nil) -> Int {
-        queueBytesOut.mutate { $0 = Int64(data.count) }
-        outputQueue.async {
-            let sendCompletion = NWConnection.SendCompletion.contentProcessed { error in
-                defer {
-                    if locked != nil {
-                        OSAtomicAnd32Barrier(0, locked!)
-                    }
-                }
-                guard self.connected else {
-                    return
-                }
-                if error != nil {
-                    self.close(isDisconnected: true)
-                    return
-                }
-                self.totalBytesOut.mutate { $0 += Int64(data.count) }
-                self.queueBytesOut.mutate { $0 -= Int64(data.count) }
+    func doOutput(data: Data) -> Int {
+        queueBytesOut.mutate { $0 += Int64(data.count) }
+        connection?.send(content: data, completion: .contentProcessed { error in
+            guard self.connected else {
+                return
             }
-            self.connection?.send(content: data, completion: sendCompletion)
-        }
+            if error != nil {
+                self.close(isDisconnected: true)
+                return
+            }
+            self.totalBytesOut.mutate { $0 += Int64(data.count) }
+            self.queueBytesOut.mutate { $0 -= Int64(data.count) }
+        })
         return data.count
     }
 
@@ -144,17 +155,34 @@ final class RTMPNWSocket: RTMPSocketCompatible {
         }
     }
 
+    private func viabilityDidChange(to viability: Bool) {
+        logger.info("Connection viability changed to ", viability)
+        if viability == false {
+            close(isDisconnected: true)
+        }
+    }
+
     private func stateDidChange(to state: NWConnection.State) {
         switch state {
         case .ready:
+            logger.info("Connection is ready.")
             timeoutHandler?.cancel()
             connected = true
-        case .failed:
+        case .waiting(let error):
+            logger.warn("Connection waiting:", error)
+            close(isDisconnected: true)
+        case .setup:
+            logger.debug("Connection is setting up.")
+        case .preparing:
+            logger.debug("Connection is preparing.")
+        case .failed(let error):
+            logger.warn("Connection failed:", error)
             close(isDisconnected: true)
         case .cancelled:
+            logger.info("Connection cancelled.")
             close(isDisconnected: true)
-        default:
-            break
+        @unknown default:
+            logger.error("Unknown connection state.")
         }
     }
 
@@ -188,13 +216,13 @@ final class RTMPNWSocket: RTMPSocketCompatible {
             }
             inputBuffer.removeAll()
             readyState = .handshakeDone
-        case .handshakeDone:
+        case .handshakeDone, .closing:
             if inputBuffer.isEmpty {
                 break
             }
             let bytes: Data = inputBuffer
             inputBuffer.removeAll()
-            delegate?.listen(bytes)
+            delegate?.socket(self, data: bytes)
         default:
             break
         }

@@ -16,12 +16,13 @@ final class PlaybackViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         rtmpStream = RTMPStream(connection: rtmpConnection)
+        rtmpStream.delegate = self
     }
 
     override func viewWillAppear(_ animated: Bool) {
         logger.info("viewWillAppear")
         super.viewWillAppear(animated)
-        (view as? NetStreamDrawable)?.attachStream(rtmpStream)
+        (view as? (any NetStreamDrawable))?.attachStream(rtmpStream)
         if #available(iOS 15.0, *), let layer = view.layer as? AVSampleBufferDisplayLayer {
             pictureInPictureController = AVPictureInPictureController(contentSource: .init(sampleBufferDisplayLayer: layer, playbackDelegate: self))
         }
@@ -117,5 +118,33 @@ extension PlaybackViewController: AVPictureInPictureSampleBufferPlaybackDelegate
 
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completion completionHandler: @escaping () -> Void) {
         completionHandler()
+    }
+}
+
+extension PlaybackViewController: NetStreamDelegate {
+    // MARK: NetStreamDelegate
+    func stream(_ stream: NetStream, didOutput audio: AVAudioBuffer, presentationTimeStamp: CMTime) {
+    }
+
+    func stream(_ stream: NetStream, didOutput video: CMSampleBuffer) {
+    }
+
+    func stream(_ stream: NetStream, sessionWasInterrupted session: AVCaptureSession, reason: AVCaptureSession.InterruptionReason?) {
+    }
+
+    func stream(_ stream: NetStream, sessionInterruptionEnded session: AVCaptureSession) {
+    }
+
+    func stream(_ stream: NetStream, videoCodecErrorOccurred error: VideoCodec.Error) {
+    }
+
+    func stream(_ stream: NetStream, audioCodecErrorOccurred error: HaishinKit.AudioCodec.Error) {
+    }
+
+    func streamWillDropFrame(_ stream: NetStream) -> Bool {
+        return false
+    }
+
+    func streamDidOpen(_ stream: NetStream) {
     }
 }

@@ -10,10 +10,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        // Logboard.with(HaishinKitIdentifier).level = .trace
+        // LBLogger.with(HaishinKitIdentifier).level = .trace
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+            // If you set the "mode" parameter, stereo capture is not possible, so it is left unspecified.
+            try session.setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetooth])
             try session.setActive(true)
         } catch {
             logger.error(error)

@@ -44,16 +44,17 @@ open class SampleHandler: RPBroadcastSampleHandler {
             if let description = CMSampleBufferGetFormatDescription(sampleBuffer) {
                 let dimensions = CMVideoFormatDescriptionGetDimensions(description)
                 rtmpStream.videoSettings.videoSize = .init(width: dimensions.width, height: dimensions.height)
+                rtmpStream.videoSettings.profileLevel = kVTProfileLevel_H264_Baseline_AutoLevel as String
             }
-            rtmpStream.appendSampleBuffer(sampleBuffer, withType: .video)
+            rtmpStream.appendSampleBuffer(sampleBuffer)
         case .audioMic:
             isMirophoneOn = true
             if CMSampleBufferDataIsReady(sampleBuffer) {
-                rtmpStream.appendSampleBuffer(sampleBuffer, withType: .audio)
+                rtmpStream.appendSampleBuffer(sampleBuffer)
             }
         case .audioApp:
             if !isMirophoneOn && CMSampleBufferDataIsReady(sampleBuffer) {
-                rtmpStream.appendSampleBuffer(sampleBuffer, withType: .audio)
+                rtmpStream.appendSampleBuffer(sampleBuffer)
             }
         @unknown default:
             break

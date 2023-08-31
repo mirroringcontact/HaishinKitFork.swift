@@ -26,7 +26,7 @@ private class TSReaderAudioCodec: TSReaderDelegate, AudioCodecDelegate {
 
     init() {
         audioCodec.delegate = self
-        audioCodec.destination = .pcm
+        audioCodec.settings.format = .pcm
         audioCodec.startRunning()
     }
 
@@ -42,7 +42,7 @@ private class TSReaderAudioCodec: TSReaderDelegate, AudioCodecDelegate {
         }
     }
 
-    func audioCodec(_ codec: HaishinKit.AudioCodec, didSet outputFormat: AVAudioFormat) {
+    func audioCodec(_ codec: HaishinKit.AudioCodec, didOutput outputFormat: AVAudioFormat) {
     }
 
     func audioCodec(_ codec: HaishinKit.AudioCodec, errorOccurred error: HaishinKit.AudioCodec.Error) {

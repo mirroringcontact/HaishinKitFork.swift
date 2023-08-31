@@ -11,13 +11,14 @@ enum RTMPSocketReadyState: UInt8 {
 
 protocol RTMPSocketCompatible: AnyObject {
     var timeout: Int { get set }
-    var delegate: RTMPSocketDelegate? { get set }
+    var delegate: (any RTMPSocketDelegate)? { get set }
     var connected: Bool { get }
     var timestamp: TimeInterval { get }
     var readyState: RTMPSocketReadyState { get set }
     var chunkSizeC: Int { get set }
     var chunkSizeS: Int { get set }
     var inputBuffer: Data { get set }
+    var outputBufferSize: Int { get set }
     var totalBytesIn: Atomic<Int64> { get }
     var totalBytesOut: Atomic<Int64> { get }
     var queueBytesOut: Atomic<Int64> { get }
@@ -25,7 +26,7 @@ protocol RTMPSocketCompatible: AnyObject {
     var qualityOfService: DispatchQoS { get set }
 
     @discardableResult
-    func doOutput(chunk: RTMPChunk, locked: UnsafeMutablePointer<UInt32>?) -> Int
+    func doOutput(chunk: RTMPChunk) -> Int
     func close(isDisconnected: Bool)
     func connect(withName: String, port: Int)
     func setProperty(_ value: Any?, forKey: String)
@@ -44,9 +45,9 @@ extension RTMPSocketCompatible {
 }
 
 // MARK: -
-// swiftlint:disable class_delegate_protocol
+// swiftlint:disable:next class_delegate_protocol
 protocol RTMPSocketDelegate: EventDispatcherConvertible {
-    func listen(_ data: Data)
-    func didSetReadyState(_ readyState: RTMPSocketReadyState)
-    func didSetTotalBytesIn(_ totalBytesIn: Int64)
+    func socket(_ socket: any RTMPSocketCompatible, data: Data)
+    func socket(_ socket: any RTMPSocketCompatible, readyState: RTMPSocketReadyState)
+    func socket(_ socket: any RTMPSocketCompatible, totalBytesIn: Int64)
 }

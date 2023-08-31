@@ -7,12 +7,12 @@ typealias DisplayLink = CADisplayLink
 #endif
 
 protocol ChoreographerDelegate: AnyObject {
-    func choreographer(_ choreographer: Choreographer, didFrame duration: Double)
+    func choreographer(_ choreographer: any Choreographer, didFrame duration: Double)
 }
 
 protocol Choreographer: Running {
     var isPaused: Bool { get set }
-    var delegate: ChoreographerDelegate? { get set }
+    var delegate: (any ChoreographerDelegate)? { get set }
 
     func clear()
 }
@@ -28,7 +28,7 @@ final class DisplayLinkChoreographer: NSObject, Choreographer {
             displayLink?.isPaused = newValue
         }
     }
-    weak var delegate: ChoreographerDelegate?
+    weak var delegate: (any ChoreographerDelegate)?
     var isRunning: Atomic<Bool> = .init(false)
     private var duration: Double = 0.0
     private var displayLink: DisplayLink? {

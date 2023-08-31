@@ -7,7 +7,6 @@ import VideoToolbox
 final class LiveViewController: UIViewController {
     private static let maxRetryCount: Int = 5
 
-    @IBOutlet private weak var lfView: MTHKView!
     @IBOutlet private weak var currentFPSLabel: UILabel!
     @IBOutlet private weak var publishButton: UIButton!
     @IBOutlet private weak var pauseButton: UIButton!
@@ -18,6 +17,8 @@ final class LiveViewController: UIViewController {
     @IBOutlet private weak var audioBitrateSlider: UISlider!
     @IBOutlet private weak var fpsControl: UISegmentedControl!
     @IBOutlet private weak var effectSegmentControl: UISegmentedControl!
+    @IBOutlet private weak var audioDevicePicker: UIPickerView!
+    @IBOutlet private weak var audioMonoStereoSegmentCOntrol: UISegmentedControl!
 
     private var pipIntentView = UIView()
     private var rtmpConnection = RTMPConnection()
@@ -27,9 +28,12 @@ final class LiveViewController: UIViewController {
     private var currentPosition: AVCaptureDevice.Position = .back
     private var retryCount: Int = 0
     private var videoBitRate = VideoCodecSettings.default.bitRate
+    private var preferedStereo = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
+
+        rtmpConnection.delegate = self
 
         pipIntentView.layer.borderWidth = 1.0
         pipIntentView.layer.borderColor = UIColor.white.cgColor
@@ -41,8 +45,24 @@ final class LiveViewController: UIViewController {
         if let orientation = DeviceUtil.videoOrientation(by: UIApplication.shared.statusBarOrientation) {
             rtmpStream.videoOrientation = orientation
         }
-        rtmpStream.delegate = self
-        rtmpStream.videoSettings.videoSize = .init(width: 720, height: 1280)
+
+        rtmpStream.loopback = DeviceUtil.isHeadphoneConnected()
+
+        rtmpStream.audioSettings = AudioCodecSettings(
+            bitRate: 64 * 1000
+        )
+
+        rtmpStream.videoSettings = VideoCodecSettings(
+            videoSize: .init(width: 854, height: 480),
+            profileLevel: kVTProfileLevel_H264_Baseline_3_1 as String,
+            bitRate: 640 * 1000,
+            maxKeyFrameIntervalDuration: 2,
+            scalingMode: .trim,
+            bitRateMode: .average,
+            allowFrameReordering: nil,
+            isHardwareEncoderEnabled: true
+        )
+
         rtmpStream.mixer.recorder.delegate = self
         videoBitrateSlider?.value = Float(VideoCodecSettings.default.bitRate) / 1000
         audioBitrateSlider?.value = Float(AudioCodecSettings.default.bitRate) / 1000
@@ -53,20 +73,22 @@ final class LiveViewController: UIViewController {
     override func viewWillAppear(_ animated: Bool) {
         logger.info("viewWillAppear")
         super.viewWillAppear(animated)
-        rtmpStream.attachAudio(AVCaptureDevice.default(for: .audio)) { error in
-            logger.warn(error)
-        }
         let back = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: currentPosition)
-        rtmpStream.attachCamera(back) { error in
-            logger.warn(error)
-        }
+
+        // If you're using multi-camera functionality, please make sure to call the attachMultiCamera method first. This is required for iOS 14 and 15, among others.
         if #available(iOS 13.0, *) {
             let front = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front)
             rtmpStream.videoCapture(for: 1)?.isVideoMirrored = true
             rtmpStream.attachMultiCamera(front)
         }
+        rtmpStream.attachCamera(back) { error in
+            logger.warn(error)
+        }
+        rtmpStream.attachAudio(AVCaptureDevice.default(for: .audio), automaticallyConfiguresApplicationAudioSession: false) { error in
+            logger.warn(error)
+        }
         rtmpStream.addObserver(self, forKeyPath: "currentFPS", options: .new, context: nil)
-        lfView?.attachStream(rtmpStream)
+        (view as? NetStreamDrawable)?.attachStream(rtmpStream)
         NotificationCenter.default.addObserver(self, selector: #selector(didInterruptionNotification(_:)), name: AVAudioSession.interruptionNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(didRouteChangeNotification(_:)), name: AVAudioSession.routeChangeNotification, object: nil)
     }
@@ -81,11 +103,11 @@ final class LiveViewController: UIViewController {
         if #available(iOS 13.0, *) {
             rtmpStream.attachMultiCamera(nil)
         }
-        // swiftlint:disable notification_center_detachment
+        // swiftlint:disable:next notification_center_detachment
         NotificationCenter.default.removeObserver(self)
     }
 
-    // swiftlint:disable block_based_kvo
+    // swiftlint:disable:next block_based_kvo
     override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         if Thread.isMainThread {
             currentFPSLabel?.text = "\(rtmpStream.currentFPS)"
@@ -232,6 +254,23 @@ final class LiveViewController: UIViewController {
         }
     }
 
+    private func setEnabledPreferredInputBuiltInMic(_ isEnabled: Bool) {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            if isEnabled {
+                guard
+                    let availableInputs = session.availableInputs,
+                    let builtInMicInput = availableInputs.first(where: { $0.portType == .builtInMic }) else {
+                    return
+                }
+                try session.setPreferredInput(builtInMicInput)
+            } else {
+                try session.setPreferredInput(nil)
+            }
+        } catch {
+        }
+    }
+
     @IBAction private func onFPSValueChanged(_ segment: UISegmentedControl) {
         switch segment.selectedSegmentIndex {
         case 0:
@@ -261,6 +300,18 @@ final class LiveViewController: UIViewController {
         }
     }
 
+    @IBAction private func onStereoMonoChanged(_ segment: UISegmentedControl) {
+        switch segment.selectedSegmentIndex {
+        case 0:
+            preferedStereo = false
+        case 1:
+            preferedStereo = true
+            pickerView(audioDevicePicker, didSelectRow: audioDevicePicker.selectedRow(inComponent: 0), inComponent: 0)
+        default:
+            break
+        }
+    }
+
     @objc
     private func didInterruptionNotification(_ notification: Notification) {
         logger.info(notification)
@@ -269,6 +320,21 @@ final class LiveViewController: UIViewController {
     @objc
     private func didRouteChangeNotification(_ notification: Notification) {
         logger.info(notification)
+        if AVAudioSession.sharedInstance().inputDataSources?.isEmpty == true {
+            setEnabledPreferredInputBuiltInMic(false)
+            audioMonoStereoSegmentCOntrol.isHidden = true
+            audioDevicePicker.isHidden = true
+        } else {
+            setEnabledPreferredInputBuiltInMic(true)
+            audioMonoStereoSegmentCOntrol.isHidden = false
+            audioDevicePicker.isHidden = false
+        }
+        audioDevicePicker.reloadAllComponents()
+        if DeviceUtil.isHeadphoneDisconnected(notification) {
+            rtmpStream.loopback = false
+        } else {
+            rtmpStream.loopback = DeviceUtil.isHeadphoneConnected()
+        }
     }
 
     @objc
@@ -277,6 +343,26 @@ final class LiveViewController: UIViewController {
             return
         }
         rtmpStream.videoOrientation = orientation
+    }
+}
+
+extension LiveViewController: RTMPConnectionDelegate {
+    func connection(_ connection: RTMPConnection, publishInsufficientBWOccured stream: RTMPStream) {
+        // Adaptive bitrate streaming exsample. Please feedback me your good algorithm. :D
+        videoBitRate -= 32 * 1000
+        stream.videoSettings.bitRate = max(videoBitRate, 64 * 1000)
+    }
+
+    func connection(_ connection: RTMPConnection, publishSufficientBWOccured stream: RTMPStream) {
+        videoBitRate += 32 * 1000
+        stream.videoSettings.bitRate = min(videoBitRate, VideoCodecSettings.default.bitRate)
+    }
+
+    func connection(_ connection: RTMPConnection, updateStats stream: RTMPStream) {
+    }
+
+    func connection(_ connection: RTMPConnection, didClear stream: RTMPStream) {
+        videoBitRate = VideoCodecSettings.default.bitRate
     }
 }
 
@@ -299,38 +385,46 @@ extension LiveViewController: IORecorderDelegate {
     }
 }
 
-extension LiveViewController: RTMPStreamDelegate {
-    // MARK: RTMPStreamDelegate
-    func rtmpStream(_ stream: RTMPStream, publishInsufficientBWOccured connection: RTMPConnection) {
-        // Adaptive bitrate streaming exsample. Please feedback me your good algorithm. :D
-        videoBitRate -= 32 * 1000
-        stream.videoSettings.bitRate = max(videoBitRate, 64 * 1000)
+extension LiveViewController: UIPickerViewDelegate {
+    // MARK: UIPickerViewDelegate
+    func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+        let session = AVAudioSession.sharedInstance()
+        guard let preferredInput = session.preferredInput,
+              let newDataSource = preferredInput.dataSources?[row],
+              let supportedPolarPatterns = newDataSource.supportedPolarPatterns else {
+            return
+        }
+        do {
+            if #available(iOS 14.0, *) {
+                if preferedStereo && supportedPolarPatterns.contains(.stereo) {
+                    try newDataSource.setPreferredPolarPattern(.stereo)
+                    logger.info("stereo")
+                } else {
+                    audioMonoStereoSegmentCOntrol.selectedSegmentIndex = 0
+                    logger.info("mono")
+                }
+            }
+            try preferredInput.setPreferredDataSource(newDataSource)
+        } catch {
+            logger.warn("can't set supported setPreferredDataSource")
+        }
+        rtmpStream.attachAudio(AVCaptureDevice.default(for: .audio), automaticallyConfiguresApplicationAudioSession: false) { error in
+            logger.warn(error)
+        }
+    }
+}
+
+extension LiveViewController: UIPickerViewDataSource {
+    // MARK: UIPickerViewDataSource
+    func numberOfComponents(in pickerView: UIPickerView) -> Int {
+        return 1
     }
 
-    func rtmpStream(_ stream: RTMPStream, publishSufficientBWOccured connection: RTMPConnection) {
-        videoBitRate += 32 * 1000
-        stream.videoSettings.bitRate = min(videoBitRate, VideoCodecSettings.default.bitRate)
+    func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int {
+        return AVAudioSession.sharedInstance().preferredInput?.dataSources?.count ?? 0
     }
 
-    func rtmpStream(_ stream: RTMPStream, didOutput audio: AVAudioBuffer, presentationTimeStamp: CMTime) {
-    }
-
-    func rtmpStream(_ stream: RTMPStream, didOutput video: CMSampleBuffer) {
-    }
-
-    func rtmpStream(_ stream: RTMPStream, updatedStats connection: RTMPConnection) {
-    }
-
-    func rtmpStream(_ stream: RTMPStream, sessionWasInterrupted session: AVCaptureSession, reason: AVCaptureSession.InterruptionReason) {
-    }
-
-    func rtmpStream(_ stream: RTMPStream, sessionInterruptionEnded session: AVCaptureSession, reason: AVCaptureSession.InterruptionReason) {
-    }
-
-    func rtmpStream(_ stream: RTMPStream, videoCodecErrorOccurred error: VideoCodec.Error) {
-    }
-
-    func rtmpStreamDidClear(_ stream: RTMPStream) {
-        videoBitRate = VideoCodecSettings.default.bitRate
+    func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
+        return AVAudioSession.sharedInstance().preferredInput?.dataSources?[row].dataSourceName ?? ""
     }
 }

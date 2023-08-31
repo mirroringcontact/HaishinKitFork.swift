@@ -1,48 +1,40 @@
-#if os(iOS)
+#if os(iOS) || os(tvOS)
 
 import AVFoundation
 import CoreImage
 import UIKit
 
-/// The interface a capture session uses to inform its delegate.
-public protocol CaptureSessionDelegate: AnyObject {
-    /// Tells the receiver to set a size.
-    func session(_ session: CaptureSessionConvertible, didSet size: CGSize)
-    /// Tells the receiver to output a pixel buffer.
-    func session(_ session: CaptureSessionConvertible, didOutput pixelBuffer: CVPixelBuffer, presentationTime: CMTime)
-}
-
-extension CGRect {
+private extension CGRect {
     init(size: CGSize) {
         self.init(origin: .zero, size: size)
     }
 }
 
-public protocol CaptureSessionConvertible: Running {
-    var attributes: [NSString: NSObject] { get }
-    var delegate: CaptureSessionDelegate? { get set }
-}
-
 // MARK: -
-open class ScreenCaptureSession: NSObject, CaptureSessionConvertible {
+/// The IOUIScreenCaptureUnit class captures the UIView.
+public class IOUIScreenCaptureUnit: NSObject, IOScreenCaptureUnit {
     static let defaultFrameInterval: Int = 2
     static let defaultAttributes: [NSString: NSObject] = [
         kCVPixelBufferPixelFormatTypeKey: NSNumber(value: kCVPixelFormatType_32BGRA),
         kCVPixelBufferCGBitmapContextCompatibilityKey: true as NSObject
     ]
 
+    /// Specifies the boolean value that indicates whether the snapshot image downsize or not.
     public var enabledScale = false
+    /// Specifies the boolean value that indicates whether the snapshot should be rendered after recent changes have been incorporated.
     public var afterScreenUpdates = false
-    public var frameInterval: Int = ScreenCaptureSession.defaultFrameInterval
+    /// Specifies the number of shaphot  that must pass before the display link notifies the target again.
+    public var frameInterval: Int = IOUIScreenCaptureUnit.defaultFrameInterval
+    /// Specifies the CVPixelBufferPool's attrivutes.
     public var attributes: [NSString: NSObject] {
-        var attributes: [NSString: NSObject] = ScreenCaptureSession.defaultAttributes
+        var attributes: [NSString: NSObject] = IOUIScreenCaptureUnit.defaultAttributes
         attributes[kCVPixelBufferWidthKey] = NSNumber(value: Float(size.width * scale))
         attributes[kCVPixelBufferHeightKey] = NSNumber(value: Float(size.height * scale))
         attributes[kCVPixelBufferBytesPerRowAlignmentKey] = NSNumber(value: Float(size.width * scale * 4))
         return attributes
     }
-    public weak var delegate: CaptureSessionDelegate?
-    public internal(set) var isRunning: Atomic<Bool> = .init(false)
+    public weak var delegate: (any IOScreenCaptureUnitDelegate)?
+    public private(set) var isRunning: Atomic<Bool> = .init(false)
 
     private var shared: UIApplication?
     private var viewToCapture: UIView?
@@ -59,7 +51,6 @@ open class ScreenCaptureSession: NSObject, CaptureSessionConvertible {
             guard size != oldValue else {
                 return
             }
-            delegate?.session(self, didSet: CGSize(width: size.width * scale, height: size.height * scale))
             pixelBufferPool = nil
         }
     }
@@ -82,12 +73,14 @@ open class ScreenCaptureSession: NSObject, CaptureSessionConvertible {
         }
     }
 
+    /// Creates an IOUIScreenCaptureUnit object to capture UIApplication.
     public init(shared: UIApplication) {
         self.shared = shared
         size = UIScreen.main.bounds.size
         super.init()
     }
 
+    /// Create an IOUIScreenCaptureUnit object to capture UIView.
     public init(viewToCapture: UIView) {
         self.viewToCapture = viewToCapture
         size = viewToCapture.bounds.size
@@ -116,7 +109,7 @@ open class ScreenCaptureSession: NSObject, CaptureSessionConvertible {
         }
     }
 
-    open func onScreenProcess(_ displayLink: CADisplayLink) {
+    func onScreenProcess(_ displayLink: CADisplayLink) {
         var pixelBuffer: CVPixelBuffer?
 
         CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &pixelBuffer)
@@ -149,7 +142,7 @@ open class ScreenCaptureSession: NSObject, CaptureSessionConvertible {
     }
 }
 
-extension ScreenCaptureSession: Running {
+extension IOUIScreenCaptureUnit: Running {
     // MARK: Running
     public func startRunning() {
         lockQueue.sync {
@@ -161,7 +154,7 @@ extension ScreenCaptureSession: Running {
             self.colorSpace = CGColorSpaceCreateDeviceRGB()
             self.displayLink = CADisplayLink(target: self, selector: #selector(onScreen))
             self.displayLink.frameInterval = self.frameInterval
-            self.displayLink.add(to: .main, forMode: RunLoop.Mode.common)
+            self.displayLink.add(to: .main, forMode: .common)
         }
     }
 
@@ -170,7 +163,7 @@ extension ScreenCaptureSession: Running {
             guard self.isRunning.value else {
                 return
             }
-            self.displayLink.remove(from: .main, forMode: RunLoop.Mode.common)
+            self.displayLink.remove(from: .main, forMode: .common)
             self.displayLink.invalidate()
             self.colorSpace = nil
             self.displayLink = nil
